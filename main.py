@@ -1,10 +1,12 @@
 from protocol import (
     MqttConnack,
     MqttConnect,
-    MqttDisconnect,
     MqttPublish,
     MqttSubscribe,
     MqttSuback,
+    MqttPingreq,
+    MqttPingresp,
+    MqttDisconnect,
     QosLevel,
     deserialize_mqtt_message,
 )
@@ -93,6 +95,10 @@ class Handler(socketserver.StreamRequestHandler):
                         suback = MqttSuback(packet_id, return_codes)
                         self.connection.sendall(suback.serialize())
                         print(f"SUBACK sent")
+                    case MqttPingreq():
+                        pingresp = MqttPingresp()
+                        self.connection.sendall(pingresp.serialize())
+                        print("PINGRESP sent")
                     case MqttDisconnect():
                         break
                     case unknown:
