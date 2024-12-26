@@ -1,4 +1,11 @@
-from protocol import MqttConnack, MqttConnect, MqttPublish, deserialize_mqtt_message
+from protocol import (
+    MqttConnack,
+    MqttConnect,
+    MqttDisconnect,
+    MqttPublish,
+    QosLevel,
+    deserialize_mqtt_message,
+)
 import socketserver
 
 
@@ -60,8 +67,21 @@ class Handler(socketserver.StreamRequestHandler):
                         connack = MqttConnack(return_code=0)
                         self.connection.sendall(connack.serialize())
                         print(f"CONNACK sent")
-                    case MqttPublish(message):
-                        pass
+                    case MqttPublish(
+                        dup_flag, qos_level, retain, topic_name, packet_id, message
+                    ):
+                        match qos_level:
+                            case QosLevel.AT_MOST_ONCE:
+                                pass
+                            case QosLevel.AT_LEAST_ONCE:
+                                raise NotImplementedError
+                            case QosLevel.EXACTLY_ONCE:
+                                raise NotImplementedError
+                    case MqttDisconnect():
+                        break
+                    case unknown:
+                        print(f"Unknown: {unknown}")
+                        raise NotImplementedError
 
                 data = data[num_bytes_consumed:]
 

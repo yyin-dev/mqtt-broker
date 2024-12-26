@@ -148,8 +148,27 @@ def deserialize_mqtt_publish(data):
     )
 
 
+@dataclass
+class MqttDisconnect:
+    pass
+
+
+def deserialize_mqtt_disconnect(data):
+    decoder = Decoder(data)
+
+    # Fixed header
+    b = decoder.byte()
+    mqtt_type = b >> 4
+    assert MessageType(mqtt_type) == MessageType.DISCONNECT
+    remaining_len = decoder.varint()
+    assert remaining_len == 0
+
+    # no variable header or payload
+    return MqttDisconnect(), decoder.num_bytes_consumed()
+
+
 # Albegraic type: https://stackoverflow.com/q/16258553/9057530
-MqttRequest = MqttConnect | MqttPublish
+MqttRequest = MqttConnect | MqttPublish | MqttDisconnect
 
 
 def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
@@ -165,6 +184,7 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
     deserialize_funcs = {
         MessageType.CONNECT: deserialize_mqtt_connect,
         MessageType.PUBLISH: deserialize_mqtt_publish,
+        MessageType.DISCONNECT: deserialize_mqtt_disconnect,
     }
     msg, num_bytes_consumed = deserialize_funcs[mqtt_type](data)
     return msg, num_bytes_consumed

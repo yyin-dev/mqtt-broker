@@ -19,3 +19,12 @@ Mqtt client: https://github.com/hivemq/mqtt-cli
 $ mqttx conn  --mqtt-version 3.1.1 -h localhost -p 1883
 ✔ Connected
 ```
+
+- [x] Handle publish
+
+```
+$ mqttx pub -t 'topic' -h localhost -p 1883 -m 'Test' --mqtt-version 3.1.1
+✔ Connected
+✔ Message published
+```
+
