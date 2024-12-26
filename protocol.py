@@ -109,7 +109,43 @@ class MqttConnack:
 
 @dataclass
 class MqttPublish:
+    dup_flag: bool
+    qos_level: QosLevel
+    retain: bool
+    topic_name: str
+    packet_id: bytes  # 2 bytes; only present when qos is 1 or 2
     message: str
+
+
+def deserialize_mqtt_publish(data):
+    decoder = Decoder(data)
+
+    # Fixed header
+    b = decoder.byte()
+    mqtt_type = b >> 4
+    assert MessageType(mqtt_type) == MessageType.PUBLISH
+
+    dup_flag = ((b & 0x08)) > 0
+    qos_level = QosLevel((b & 0x06) >> 1)
+    retain = b & 0x01 > 0
+    remaining_len = decoder.varint()
+    num_bytes_consumed = decoder.num_bytes_consumed()
+
+    # Variable header
+    topic_name = decoder.string()
+    if qos_level == QosLevel.AT_LEAST_ONCE or qos_level == QosLevel.EXACTLY_ONCE:
+        packet_id = decoder.bytes(2)
+    else:
+        packet_id = None
+
+    # payload
+    message_length = remaining_len - (decoder.num_bytes_consumed() - num_bytes_consumed)
+    message = decoder.bytes(message_length).decode("utf-8")
+
+    return (
+        MqttPublish(dup_flag, qos_level, retain, topic_name, packet_id, message),
+        decoder.num_bytes_consumed(),
+    )
 
 
 # Albegraic type: https://stackoverflow.com/q/16258553/9057530
@@ -123,10 +159,12 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
     decoder = Decoder(data)
 
     b = decoder.byte()
-    mqtt_type = b >> 4
-    print(MessageType(mqtt_type))
+    mqtt_type = MessageType(b >> 4)
+    print(mqtt_type)
 
-    deserialize_funcs = [deserialize_mqtt_connect]
-    deserialize_func = deserialize_funcs[mqtt_type - 1]
-    msg, num_bytes_consumed = deserialize_func(data)
+    deserialize_funcs = {
+        MessageType.CONNECT: deserialize_mqtt_connect,
+        MessageType.PUBLISH: deserialize_mqtt_publish,
+    }
+    msg, num_bytes_consumed = deserialize_funcs[mqtt_type](data)
     return msg, num_bytes_consumed
