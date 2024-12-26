@@ -39,6 +39,9 @@ class Handler(socketserver.StreamRequestHandler):
             # socket.recv() returns a bytes object
             data = self.connection.recv(1024)
 
+            if len(data) == 0:
+                break
+
             while len(data) > 0:
                 request, num_bytes_consumed = deserialize_mqtt_message(data)
                 print(request)
@@ -62,8 +65,7 @@ class Handler(socketserver.StreamRequestHandler):
 
                 data = data[num_bytes_consumed:]
 
-            print("Client disconnected!")
-            break
+        print("Client disconnected!")
 
 
 def main():

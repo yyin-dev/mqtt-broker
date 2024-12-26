@@ -124,6 +124,7 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
 
     b = decoder.byte()
     mqtt_type = b >> 4
+    print(MessageType(mqtt_type))
 
     deserialize_funcs = [deserialize_mqtt_connect]
     deserialize_func = deserialize_funcs[mqtt_type - 1]
