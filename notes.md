@@ -1,6 +1,6 @@
 [TOC]
 
-A toy MQTT broker implementation supporting [version 3.1.1](https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/mqtt-v3.1.1.html). Inspired by: https://codepr.github.io/posts/sol-mqtt-broker/
+A toy MQTT broker implementation supporting [version 3.1.1](https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/mqtt-v3.1.1.html). 
 
 ### MQTT client
 
@@ -14,19 +14,27 @@ Mqtt client: https://github.com/hivemq/mqtt-cli
 - The client uses V5 by default. Provide `--mqttVersion 3` to use 3.1.1.
 - V5 introduces "problem infomation". Pass in `--no-reqProblemInfo` to skip requesting it from server.
 
+```
+$ mqtt test -h localhost -p 1883 --mqttVersion=3
+```
+
 ### Progress
+
 ```
 $ mqtt test -h localhost -p 1883 --mqttVersion=3
 MQTT 3: OK
 	- Maximum topic length: 510 bytes
-	- QoS 0: Received 10/10 publishes in 4.36ms
-	- QoS 1: Received 0/10 publishes in 10010.08ms
-	- QoS 2: Received 0/10 publishes in 1.99ms
+	- QoS 0: Received 10/10 publishes in 4.52ms
+	- QoS 1: Received 10/10 publishes in 5.91ms
+	- QoS 2: Received 0/10 publishes in 10009.60ms
 	- Retain: TIME_OUT
 	- Wildcard subscriptions: NO
 		> '+' Wildcard: TIME_OUT
 		> '#' Wildcard: TIME_OUT
-	- Shared subscriptions:
+	- Shared subscriptions: TIME_OUT
+	- Payload size: 986 bytes
+	- Maximum client id length: 65535 bytes
+	- Unsupported Ascii Chars: ALL SUPPORTED
 ```
 
 - [x] Handles connection. 

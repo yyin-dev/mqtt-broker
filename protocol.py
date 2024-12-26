@@ -170,6 +170,23 @@ class MqttPuback:
         return encoder.bytes()
 
 
+def deserializee_mqtt_puback(data):
+    decoder = Decoder(data)
+
+    # fixed header
+    b = decoder.byte()
+    mqtt_byte = b >> 4
+    assert MessageType(mqtt_byte) == MessageType.PUBACK
+
+    remaining_len = decoder.varint()
+    assert remaining_len == 2
+
+    # variable header
+    packet_id = decoder.bytes(2)
+
+    return MqttPuback(packet_id), decoder.bytes_consumed()
+
+
 @dataclass
 class MqttPubrec:
     packet_id: bytes  # 2 byte
@@ -312,7 +329,14 @@ class MqttPingresp:
 
 
 # Albegraic type: https://stackoverflow.com/q/16258553/9057530
-MqttRequest = MqttConnect | MqttPublish | MqttSubscribe | MqttDisconnect | MqttPingreq
+MqttRequest = (
+    MqttConnect
+    | MqttPublish
+    | MqttPuback
+    | MqttSubscribe
+    | MqttDisconnect
+    | MqttPingreq
+)
 
 
 def deserialize_mqtt_message(data) -> tuple[MqttRequest, bytes]:
@@ -326,6 +350,7 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, bytes]:
     deserialize_funcs = {
         MessageType.CONNECT: deserialize_mqtt_connect,
         MessageType.PUBLISH: deserialize_mqtt_publish,
+        MessageType.PUBACK: deserializee_mqtt_puback,
         MessageType.SUBSCRIBE: deserialize_mqtt_subscribe,
         MessageType.PINGREQ: deserialize_mqtt_pingreq,
         MessageType.DISCONNECT: deserialize_mqtt_disconnect,

@@ -95,15 +95,26 @@ class Handler(socketserver.StreamRequestHandler):
                     case MqttPublish(
                         dup_flag, qos_level, retain, topic, packet_id, message
                     ):
+                        if topic not in self.server.subscriptions:
+                            self.server.subscriptions[topic] = set()
+
                         match qos_level:
                             case QosLevel.AT_MOST_ONCE:
-                                pass
+                                for client_id in self.server.subscriptions[topic]:
+                                    client_conn = self.server.clients[client_id]
+                                    client_conn.sendall(bytes_consumed)
                             case QosLevel.AT_LEAST_ONCE:
-                                print(f"Unsupported QoS level: {qos_level}!!!")
-
                                 puback = MqttPuback(packet_id)
                                 self.connection.sendall(puback.serialize())
                                 print(f"PUBACK sent")
+
+                                for client_id in self.server.subscriptions[topic]:
+                                    client_conn = self.server.clients[client_id]
+                                    client_conn.sendall(bytes_consumed)
+
+                                # TODO: This is not strictly correct. 
+                                # Needs to retry sending until receiving PUBACK
+                                # from a subscriber.    
                             case QosLevel.EXACTLY_ONCE:
                                 print(f"Unsupported QoS level: {qos_level}!!!")
 
@@ -111,19 +122,12 @@ class Handler(socketserver.StreamRequestHandler):
                                 self.connection.sendall(puback.serialize())
                                 print(f"PUBACK sent")
 
-                        if topic not in self.server.subscriptions:
-                            self.server.subscriptions[topic] = set()
-
-                        for client_id in self.server.subscriptions[topic]:
-                            client_conn = self.server.clients[client_id]
-                            client_conn.sendall(bytes_consumed)
+                    case MqttPuback(packet_id):
+                        pass
                     case MqttSubscribe(packet_id, topics):
                         # Check unsupported qos-level
                         return_codes = []
                         for topic, qos_level in topics:
-                            if qos_level is not QosLevel.AT_MOST_ONCE:
-                                raise NotImplementedError
-
                             # In MQTT, clients can subscribe to a topic before
                             # any message is published to that topic.
                             if topic not in self.server.subscriptions:
