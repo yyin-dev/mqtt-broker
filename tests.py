@@ -1,6 +1,19 @@
 import unittest
+from encoder import Encoder
 from decoder import Decoder
 from protocol import deserialize_mqtt_message
+
+
+class TestEncoder(unittest.TestCase):
+    def test_varint(self):
+        encoder = Encoder()
+        encoder.append_varint(1)
+        self.assertEqual(encoder.bytes(), b"\x01")
+
+
+        encoder = Encoder()
+        encoder.append_varint(128)
+        self.assertEqual(encoder.bytes(), b"\x80\x01")
 
 
 class TestDecoder(unittest.TestCase):
