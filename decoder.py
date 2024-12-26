@@ -9,6 +9,9 @@ class Decoder:
         return b
 
     def bytes(self, n) -> bytes:
+        if self.curr + n > len(self.data):
+            raise Exception("not enough data")
+
         data = self.data[self.curr : self.curr + n]
         self.curr += n
         return data

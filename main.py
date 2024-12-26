@@ -8,6 +8,8 @@ from protocol import (
     MqttPublish,
     MqttPuback,
     MqttPubrec,
+    MqttPubrel,
+    MqttPubcomp,
     MqttSubscribe,
     MqttSuback,
     MqttPingreq,
@@ -35,24 +37,49 @@ class Server(socketserver.ThreadingTCPServer):
         self.clients: Dict[str, socket] = {}
 
         # maps packet-id to subscribers
-        self.at_least_once_messages: Dict[bytes, Tuple[MqttPublish, Set[str]]] = {}
+        self.at_least_once_messages: Dict[
+            bytes, Tuple[Tuple[MqttPublish, bytes], Set[str]]
+        ] = {}
 
-        threading.Thread(target=self.resend_at_least_once_messages).start()
+        # maps packet-id to message
+        self.releasable_exactly_once_messages: Dict[
+            bytes, Tuple[MqttPublish, bytes]
+        ] = {}
 
-    def resend_at_least_once_messages(self):
+        # maps packet-id to subscribers
+        self.exactly_once_messages: Dict[
+            bytes, Tuple[Tuple[MqttPublish, bytes], Set[str]]
+        ] = {}
+
+        threading.Thread(target=self.resend_messages).start()
+
+    def resend_messages(self):
         while True:
+            # At least once messages
             if len(self.at_least_once_messages) > 0:
                 print("Retransmitting at-least-once messages!")
 
                 # Remove disconnected subscriber if any
-                for msg, subscribers in self.at_least_once_messages.values():
+                for (msg, b), subscribers in self.at_least_once_messages.values():
                     subscribers = subscribers.intersection(self.clients.keys())
                     print(f"Retransmitting {msg} to {subscribers}")
                     for subscriber in subscribers:
                         socket = self.clients[subscriber]
-                        socket.sendall(msg)
+                        socket.sendall(b)
 
-            time.sleep(5)
+            # Exactly once messages
+            if len(self.exactly_once_messages) > 0:
+                print("Retransmitting exactly-once messages!")
+
+                # Remove disconnected subscriber if any
+                for (msg, b), subscribers in self.exactly_once_messages.values():
+                    subscribers = subscribers.intersection(self.clients.keys())
+                    print(f"Retransmitting {msg} to {subscribers}")
+                    for subscriber in subscribers:
+                        socket = self.clients[subscriber]
+                        socket.sendall(b)
+
+            time.sleep(2)
 
     def server_activate(self):
         print("Server is being activated!")
@@ -85,6 +112,8 @@ class Handler(socketserver.StreamRequestHandler):
                 break
 
             while len(data) > 0:
+                print(data)
+
                 request, bytes_consumed = deserialize_mqtt_message(data)
                 print(f"Received: {request}")
 
@@ -139,21 +168,20 @@ class Handler(socketserver.StreamRequestHandler):
 
                                 # Mark message as to be delivered at least once
                                 self.server.at_least_once_messages[packet_id] = (
-                                    mqtt_publish,
+                                    (mqtt_publish, bytes_consumed),
                                     self.server.subscriptions[
                                         topic
                                     ].copy(),  # copy() is important here! Python pass by object reference
                                 )
                             case QosLevel.EXACTLY_ONCE:
-                                print(f"Unsupported QoS level: {qos_level}!!!")
-
                                 puback = MqttPubrec(packet_id)
                                 self.connection.sendall(puback.serialize())
                                 print(f"PUBACK sent")
 
-                                for client_id in self.server.subscriptions[topic]:
-                                    client_conn = self.server.clients[client_id]
-                                    client_conn.sendall(bytes_consumed)
+                                # Mark message as pending release
+                                self.server.releasable_exactly_once_messages[
+                                    packet_id
+                                ] = (mqtt_publish, bytes_consumed)
 
                     case MqttPuback(packet_id):
                         print(f"Received PUBACK for {packet_id} from {client_id}")
@@ -161,16 +189,72 @@ class Handler(socketserver.StreamRequestHandler):
                         if packet_id not in self.server.at_least_once_messages:
                             # This is possible when we receive PUBACK for the
                             # same packet_id from a client more than once.
-                            break
+                            pass
+                        else:
+                            _, subscribers = self.server.at_least_once_messages[
+                                packet_id
+                            ]
+                            subscribers.discard(self.client_id)
 
-                        _, subscribers = self.server.at_least_once_messages[packet_id]
-                        subscribers.discard(self.client_id)
+                            if len(subscribers) == 0:
+                                print(
+                                    f"Recevied PUBACK from all subscribers of {packet_id}!"
+                                )
+                                del self.server.at_least_once_messages[packet_id]
 
-                        if len(subscribers) == 0:
-                            print(
-                                f"Recevied PUBACK from all subscribers of {packet_id}!"
+                    case MqttPubrec(packet_id):
+                        print(
+                            f"Received PUBREC for {packet_id} from subscriber {self.client_id}"
+                        )
+
+                        # Send PUBREL
+                        pubrel = MqttPubrel(packet_id)
+                        self.connection.sendall(pubrel.serialize())
+                        print("PUBREL sent")
+                    case MqttPubrel(packet_id):
+                        print(
+                            f"Received PUBREL for {packet_id} from publisher {self.client_id}"
+                        )
+
+                        if packet_id in self.server.releasable_exactly_once_messages:
+                            mqtt_publish, mqtt_publish_bytes = (
+                                self.server.releasable_exactly_once_messages[packet_id]
                             )
-                            del self.server.at_least_once_messages[packet_id]
+                            self.server.exactly_once_messages[packet_id] = (
+                                (mqtt_publish, mqtt_publish_bytes),
+                                self.server.subscriptions[mqtt_publish.topic].copy(),
+                            )
+                            del self.server.releasable_exactly_once_messages[packet_id]
+
+                            print(
+                                f"Number of exactly once messages to be sent: {len(self.server.exactly_once_messages)}"
+                            )
+
+                            # send PUBCOMP
+                            pubcomp = MqttPubcomp(packet_id)
+                            self.connection.sendall(pubcomp.serialize())
+                            print("PUBCOMP sent")
+                    case MqttPubcomp(packet_id):
+                        print(
+                            f"Received PUBCOMP for {packet_id} from publisher {self.client_id}"
+                        )
+
+                        if packet_id not in self.server.exactly_once_messages:
+                            # This is possible when we receive PUBCOMP for the
+                            # same packet_id from a client more than once.
+                            pass
+                        else:
+                            _, subscribers = self.server.exactly_once_messages[
+                                packet_id
+                            ]
+                            subscribers.discard(self.client_id)
+
+                            if len(subscribers) == 0:
+                                print(
+                                    f"Recevied PUBCOMP from all subscribers of {packet_id}!"
+                                )
+                                del self.server.exactly_once_messages[packet_id]
+
                     case MqttSubscribe(packet_id, topics):
                         # Check unsupported qos-level
                         return_codes = []
@@ -210,6 +294,11 @@ class Handler(socketserver.StreamRequestHandler):
                 data = data[len(bytes_consumed) :]
 
         print("Client disconnected!")
+
+        self.server.clients.pop(self.client_id)
+
+        for topic, subscribers in self.server.subscriptions.items():
+            subscribers.discard(self.client_id)
 
 
 def main():

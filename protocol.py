@@ -170,7 +170,7 @@ class MqttPuback:
         return encoder.bytes()
 
 
-def deserializee_mqtt_puback(data):
+def deserialize_mqtt_puback(data):
     decoder = Decoder(data)
 
     # fixed header
@@ -195,7 +195,7 @@ class MqttPubrec:
         encoder = Encoder()
 
         # fixed header
-        # byte1: 0x40
+        # byte1: 0x50
         # byte2: remaining length 2
         encoder.append_byte(0x50)
         encoder.append_varint(2)
@@ -206,6 +206,99 @@ class MqttPubrec:
         # no payload
 
         return encoder.bytes()
+
+
+def deserialize_mqtt_pubrec(data):
+    decoder = Decoder(data)
+
+    # fixed header
+    b = decoder.byte()
+    mqtt_byte = b >> 4
+    assert MessageType(mqtt_byte) == MessageType.PUBREC
+
+    remaining_len = decoder.varint()
+    assert remaining_len == 2
+
+    # variable header
+    packet_id = decoder.bytes(2)
+
+    return MqttPubrec(packet_id), decoder.bytes_consumed()
+
+
+@dataclass
+class MqttPubrel:
+    packet_id: bytes  # 2 byte
+
+    def serialize(self):
+        encoder = Encoder()
+
+        # fixed header
+        # byte1: 0x60
+        # byte2: remaining length 2
+        encoder.append_byte(0x60)
+        encoder.append_varint(2)
+
+        # variable header
+        encoder.append_bytes(self.packet_id)
+
+        # no payload
+
+        return encoder.bytes()
+
+
+def deserialize_mqtt_pubrel(data):
+    decoder = Decoder(data)
+
+    # fixed header
+    b = decoder.byte()
+    mqtt_byte = b >> 4
+    assert MessageType(mqtt_byte) == MessageType.PUBREL
+
+    remaining_len = decoder.varint()
+    assert remaining_len == 2
+
+    # variable header
+    packet_id = decoder.bytes(2)
+
+    return MqttPubrel(packet_id), decoder.bytes_consumed()
+
+
+@dataclass
+class MqttPubcomp:
+    packet_id: bytes  # 2 byte
+
+    def serialize(self):
+        encoder = Encoder()
+
+        # fixed header
+        # byte1: 0x70
+        # byte2: remaining length 2
+        encoder.append_byte(0x70)
+        encoder.append_varint(2)
+
+        # variable header
+        encoder.append_bytes(self.packet_id)
+
+        # no payload
+
+        return encoder.bytes()
+
+
+def deserialize_mqtt_pubcomp(data):
+    decoder = Decoder(data)
+
+    # fixed header
+    b = decoder.byte()
+    mqtt_byte = b >> 4
+    assert MessageType(mqtt_byte) == MessageType.PUBCOMP
+
+    remaining_len = decoder.varint()
+    assert remaining_len == 2
+
+    # variable header
+    packet_id = decoder.bytes(2)
+
+    return MqttPubcomp(packet_id), decoder.bytes_consumed()
 
 
 @dataclass
@@ -350,7 +443,10 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, bytes]:
     deserialize_funcs = {
         MessageType.CONNECT: deserialize_mqtt_connect,
         MessageType.PUBLISH: deserialize_mqtt_publish,
-        MessageType.PUBACK: deserializee_mqtt_puback,
+        MessageType.PUBACK: deserialize_mqtt_puback,
+        MessageType.PUBREC: deserialize_mqtt_pubrec,
+        MessageType.PUBREL: deserialize_mqtt_pubrel,
+        MessageType.PUBCOMP: deserialize_mqtt_pubcomp,
         MessageType.SUBSCRIBE: deserialize_mqtt_subscribe,
         MessageType.PINGREQ: deserialize_mqtt_pingreq,
         MessageType.DISCONNECT: deserialize_mqtt_disconnect,
