@@ -27,4 +27,21 @@ $ mqttx pub -t 'topic' -h localhost -p 1883 -m 'Test' --mqtt-version 3.1.1
 ✔ Connected
 ✔ Message published
 ```
+- [x] Handles subscribe
 
+```
+$ mqttx sub -t topic -h localhost --mqtt-version 3.1.1 -p 1883
+✔ Connected
+✔ Subscribed to topic
+```
+
+
+## Python hex notation
+`\x` is used in strings, regular or byte strings, to specify a single byte using hex notation.
+```
+s = b"\x41\x42"
+```
+`0x` is a prefix to indicate that a number is in hexadecimal notation.
+```
+num = 0x41 
+```

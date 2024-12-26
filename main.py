@@ -3,6 +3,8 @@ from protocol import (
     MqttConnect,
     MqttDisconnect,
     MqttPublish,
+    MqttSubscribe,
+    MqttSuback,
     QosLevel,
     deserialize_mqtt_message,
 )
@@ -77,6 +79,20 @@ class Handler(socketserver.StreamRequestHandler):
                                 raise NotImplementedError
                             case QosLevel.EXACTLY_ONCE:
                                 raise NotImplementedError
+                    case MqttSubscribe(packet_id, topics):
+                        # Check unsupported qos-level
+                        return_codes = []
+                        for topic, qos_level in topics:
+                            if qos_level is not QosLevel.AT_MOST_ONCE:
+                                raise NotImplementedError
+
+                            print(f"Subscribe to {topic}, {qos_level}")
+                            return_codes.append(0x00)
+
+                        # Respond SUBACK
+                        suback = MqttSuback(packet_id, return_codes)
+                        self.connection.sendall(suback.serialize())
+                        print(f"SUBACK sent")
                     case MqttDisconnect():
                         break
                     case unknown:

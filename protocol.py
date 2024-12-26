@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from decoder import Decoder
 from encoder import Encoder
 from enum import Enum
+from typing import List, Tuple
 
 """
 Message = | Fixed header | Variable header (optional) | Payload (optional)
@@ -94,9 +95,9 @@ class MqttConnack:
 
         # Fixed header
         # byte 1: \0x20. Packet type | flags
-        # byte 2: \0x02. Remaining length
+        # byte 2: Remaining length 2
         encoder.append_byte(0x20)
-        encoder.append_byte(0x02)
+        encoder.append_varint(2)
 
         # variable header:
         # byte 1: \x00. connect ack flags and session present flag
@@ -149,6 +150,64 @@ def deserialize_mqtt_publish(data):
 
 
 @dataclass
+class MqttSubscribe:
+    packet_id: bytes  # 2 bytes
+    topics: List[Tuple[str, QosLevel]]
+
+
+def deserialize_mqtt_subscribe(data):
+    decoder = Decoder(data)
+
+    # Fixed header
+    b = decoder.byte()
+    mqtt_type = b >> 4
+    assert MessageType(mqtt_type) == MessageType.SUBSCRIBE
+    remaining_len = decoder.varint()
+    num_bytes_in_fixed_header = decoder.num_bytes_consumed()
+
+    # Variable header
+    packet_id = decoder.bytes(2)
+
+    # Payload
+    topics = []
+    while not decoder.consumed_all():
+        topic = decoder.string()
+        qos_level = QosLevel(decoder.byte())
+        topics.append((topic, qos_level))
+
+    assert decoder.num_bytes_consumed() - num_bytes_in_fixed_header == remaining_len
+
+    return MqttSubscribe(packet_id, topics), decoder.num_bytes_consumed()
+
+
+@dataclass
+class MqttSuback:
+    packet_id: bytes  # 2 bytes
+    return_codes: List[int]  # matching the order of topics in SUBSCRIBE
+
+    def serialize(self):
+        # Fixed header
+        # byte 1: \0x90
+        # byte 2: remaining length, varint
+        encoder = Encoder()
+
+        encoder.append_byte(0x90)
+        variable_header_len = 2
+        payload_len = len(self.return_codes)
+        remaining_len = variable_header_len + payload_len
+        encoder.append_varint(remaining_len)
+
+        # Variable header
+        encoder.append_bytes(self.packet_id)
+
+        # Payload
+        for return_code in self.return_codes:
+            encoder.append_byte(return_code)
+
+        return encoder.bytes()
+
+
+@dataclass
 class MqttDisconnect:
     pass
 
@@ -168,7 +227,7 @@ def deserialize_mqtt_disconnect(data):
 
 
 # Albegraic type: https://stackoverflow.com/q/16258553/9057530
-MqttRequest = MqttConnect | MqttPublish | MqttDisconnect
+MqttRequest = MqttConnect | MqttPublish | MqttSubscribe | MqttDisconnect
 
 
 def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
@@ -184,6 +243,7 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
     deserialize_funcs = {
         MessageType.CONNECT: deserialize_mqtt_connect,
         MessageType.PUBLISH: deserialize_mqtt_publish,
+        MessageType.SUBSCRIBE: deserialize_mqtt_subscribe,
         MessageType.DISCONNECT: deserialize_mqtt_disconnect,
     }
     msg, num_bytes_consumed = deserialize_funcs[mqtt_type](data)
