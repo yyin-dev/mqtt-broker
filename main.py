@@ -1,3 +1,4 @@
+from protocol import MqttConnack, MqttConnect, MqttPublish, deserialize_mqtt_message
 import socketserver
 
 
@@ -30,7 +31,7 @@ class Handler(socketserver.StreamRequestHandler):
         # self refers to the handler object and is distinct for each request
         # self.server refers to the server object and is shared among handlers
         # https://stackoverflow.com/a/6875827/9057530
-        print(f"Request #{self.server.request_count}")
+        print(f"== Request #{self.server.request_count} ==")
 
         while True:
             # self.connection is a socket.socket
@@ -38,11 +39,31 @@ class Handler(socketserver.StreamRequestHandler):
             # socket.recv() returns a bytes object
             data = self.connection.recv(1024)
 
-            if len(data) == 0:
-                print("Client disconnected!")
-                break 
+            while len(data) > 0:
+                request, num_bytes_consumed = deserialize_mqtt_message(data)
+                print(request)
 
-            print(data)
+                match request:
+                    case MqttConnect(
+                        protocol_name,
+                        protocol_level,
+                        connect_flags,
+                        keep_alive,
+                        client_id,
+                    ):
+                        # Todo: validation
+                        print(f"Client(id='{client_id}') connected")
+
+                        connack = MqttConnack(return_code=0)
+                        self.connection.sendall(connack.serialize())
+                        print(f"CONNACK sent")
+                    case MqttPublish(message):
+                        pass
+
+                data = data[num_bytes_consumed:]
+
+            print("Client disconnected!")
+            break
 
 
 def main():

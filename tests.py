@@ -1,6 +1,6 @@
 import unittest
 from decoder import Decoder
-from protocol import parse_mqtt_message
+from protocol import deserialize_mqtt_message
 
 
 class TestDecoder(unittest.TestCase):
@@ -36,7 +36,7 @@ class TestDecoder(unittest.TestCase):
 class TestProtocol(unittest.TestCase):
     def test_connect(self):
         data = b"\x10\x18\x00\x04MQTT\x04\x02\x00<\x00\x0cmqttPUbRsGYH"
-        res, num_byte_consumed = parse_mqtt_message(data)
+        res, num_byte_consumed = deserialize_mqtt_message(data)
         self.assertEqual(len(data), num_byte_consumed)
 
 
