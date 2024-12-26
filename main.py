@@ -1,3 +1,5 @@
+from typing import Dict, Set
+from socket import socket
 from protocol import (
     MqttConnack,
     MqttConnect,
@@ -20,7 +22,9 @@ class Server(socketserver.ThreadingTCPServer):
         socketserver.ThreadingTCPServer.__init__(
             self, server_address, RequestHandlerClass
         )
-        self.request_count = 0
+
+        self.subscriptions: Dict[str, Set[bytes]] = {}  # maps topic name to client ids
+        self.clients: Dict[bytes, socket] = {}  # maps client id to socket
 
     def server_activate(self):
         print("Server is being activated!")
@@ -28,12 +32,7 @@ class Server(socketserver.ThreadingTCPServer):
 
     def process_request(self, request, client_address):
         print(f"Process request {request} from {client_address}")
-        self.request_count += 1
         super().process_request(request, client_address)
-
-    def finish_request(self, request, client_address):
-        print(f"Handling request from {client_address}")
-        super().finish_request(request, client_address)
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -42,7 +41,10 @@ class Handler(socketserver.StreamRequestHandler):
         # self refers to the handler object and is distinct for each request
         # self.server refers to the server object and is shared among handlers
         # https://stackoverflow.com/a/6875827/9057530
-        print(f"== Request #{self.server.request_count} ==")
+        print(f"== Client connected ==")
+
+        # Variables used throughout the lifetime of this handler
+        self.client_id = None
 
         while True:
             # self.connection is a socket.socket
@@ -54,8 +56,8 @@ class Handler(socketserver.StreamRequestHandler):
                 break
 
             while len(data) > 0:
-                request, num_bytes_consumed = deserialize_mqtt_message(data)
-                print(request)
+                request, bytes_consumed = deserialize_mqtt_message(data)
+                print(f"Received: {request}")
 
                 match request:
                     case MqttConnect(
@@ -67,12 +69,14 @@ class Handler(socketserver.StreamRequestHandler):
                     ):
                         # Todo: validation
                         print(f"Client(id='{client_id}') connected")
+                        self.client_id = client_id
+                        self.server.clients[client_id] = self.connection
 
                         connack = MqttConnack(return_code=0)
                         self.connection.sendall(connack.serialize())
                         print(f"CONNACK sent")
                     case MqttPublish(
-                        dup_flag, qos_level, retain, topic_name, packet_id, message
+                        dup_flag, qos_level, retain, topic, packet_id, message
                     ):
                         match qos_level:
                             case QosLevel.AT_MOST_ONCE:
@@ -81,6 +85,13 @@ class Handler(socketserver.StreamRequestHandler):
                                 raise NotImplementedError
                             case QosLevel.EXACTLY_ONCE:
                                 raise NotImplementedError
+
+                        if topic not in self.server.subscriptions:
+                            self.server.subscriptions[topic] = set()
+
+                        for client_id in self.server.subscriptions[topic]:
+                            client_conn = self.server.clients[client_id]
+                            client_conn.sendall(bytes_consumed)
                     case MqttSubscribe(packet_id, topics):
                         # Check unsupported qos-level
                         return_codes = []
@@ -88,8 +99,17 @@ class Handler(socketserver.StreamRequestHandler):
                             if qos_level is not QosLevel.AT_MOST_ONCE:
                                 raise NotImplementedError
 
+                            # In MQTT, clients can subscribe to a topic before
+                            # any message is published to that topic.
+                            if topic not in self.server.subscriptions:
+                                self.server.subscriptions[topic] = set()
+
+                            self.server.subscriptions[topic].add(self.client_id)
+
                             print(f"Subscribe to {topic}, {qos_level}")
                             return_codes.append(0x00)
+
+                        print(f"Subscriptions: {self.server.subscriptions}")
 
                         # Respond SUBACK
                         suback = MqttSuback(packet_id, return_codes)
@@ -100,12 +120,18 @@ class Handler(socketserver.StreamRequestHandler):
                         self.connection.sendall(pingresp.serialize())
                         print("PINGRESP sent")
                     case MqttDisconnect():
+                        # Remove client
+                        del self.server.clients[self.client_id]
+
+                        for topic, subscribers in self.server.subscriptions.items():
+                            subscribers.discard(self.client_id)
+
                         break
                     case unknown:
                         print(f"Unknown: {unknown}")
                         raise NotImplementedError
 
-                data = data[num_bytes_consumed:]
+                data = data[len(bytes_consumed) :]
 
         print("Client disconnected!")
 

@@ -82,7 +82,7 @@ def deserialize_mqtt_connect(data):
         MqttConnect(
             protocol_name, protocol_level, connect_flags, keep_alive, client_id
         ),
-        decoder.num_bytes_consumed(),
+        decoder.bytes_consumed(),
     )
 
 
@@ -113,7 +113,7 @@ class MqttPublish:
     dup_flag: bool
     qos_level: QosLevel
     retain: bool
-    topic_name: str
+    topic: str
     packet_id: bytes  # 2 bytes; only present when qos is 1 or 2
     message: str
 
@@ -133,7 +133,7 @@ def deserialize_mqtt_publish(data):
     num_bytes_consumed = decoder.num_bytes_consumed()
 
     # Variable header
-    topic_name = decoder.string()
+    topic = decoder.string()
     if qos_level == QosLevel.AT_LEAST_ONCE or qos_level == QosLevel.EXACTLY_ONCE:
         packet_id = decoder.bytes(2)
     else:
@@ -144,8 +144,8 @@ def deserialize_mqtt_publish(data):
     message = decoder.bytes(message_length).decode("utf-8")
 
     return (
-        MqttPublish(dup_flag, qos_level, retain, topic_name, packet_id, message),
-        decoder.num_bytes_consumed(),
+        MqttPublish(dup_flag, qos_level, retain, topic, packet_id, message),
+        decoder.bytes_consumed(),
     )
 
 
@@ -177,7 +177,7 @@ def deserialize_mqtt_subscribe(data):
 
     assert decoder.num_bytes_consumed() - num_bytes_in_fixed_header == remaining_len
 
-    return MqttSubscribe(packet_id, topics), decoder.num_bytes_consumed()
+    return (MqttSubscribe(packet_id, topics), decoder.bytes_consumed())
 
 
 @dataclass
@@ -223,7 +223,7 @@ def deserialize_mqtt_disconnect(data):
     assert remaining_len == 0
 
     # no variable header or payload
-    return MqttDisconnect(), decoder.num_bytes_consumed()
+    return (MqttDisconnect(), decoder.bytes_consumed())
 
 
 @dataclass
@@ -242,7 +242,7 @@ def deserialize_mqtt_pingreq(data):
     assert remaining_len == 0
 
     # no variable header or payload
-    return MqttPingreq(), decoder.num_bytes_consumed()
+    return (MqttPingreq(), decoder.bytes_consumed())
 
 
 @dataclass
@@ -266,16 +266,14 @@ class MqttPingresp:
 MqttRequest = MqttConnect | MqttPublish | MqttSubscribe | MqttDisconnect | MqttPingreq
 
 
-def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
+def deserialize_mqtt_message(data) -> tuple[MqttRequest, bytes]:
     """
-    Returns (message, bytes_used)
+    Returns (message, bytes_consumed)
     """
     decoder = Decoder(data)
 
     b = decoder.byte()
     mqtt_type = MessageType(b >> 4)
-    print(mqtt_type)
-
     deserialize_funcs = {
         MessageType.CONNECT: deserialize_mqtt_connect,
         MessageType.PUBLISH: deserialize_mqtt_publish,
@@ -283,5 +281,5 @@ def deserialize_mqtt_message(data) -> tuple[MqttRequest, int]:
         MessageType.PINGREQ: deserialize_mqtt_pingreq,
         MessageType.DISCONNECT: deserialize_mqtt_disconnect,
     }
-    msg, num_bytes_consumed = deserialize_funcs[mqtt_type](data)
-    return msg, num_bytes_consumed
+    msg, bytes_consumed = deserialize_funcs[mqtt_type](data)
+    return msg, bytes_consumed

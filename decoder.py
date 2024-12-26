@@ -51,3 +51,9 @@ class Decoder:
 
     def consumed_all(self) -> bool:
         return self.curr == len(self.data)
+
+    def bytes_consumed(self) -> bytes:
+        """
+        Returns bytes consumed so far.
+        """
+        return self.data[: self.curr]

@@ -10,7 +10,6 @@ class TestEncoder(unittest.TestCase):
         encoder.append_varint(1)
         self.assertEqual(encoder.bytes(), b"\x01")
 
-
         encoder = Encoder()
         encoder.append_varint(128)
         self.assertEqual(encoder.bytes(), b"\x80\x01")
@@ -49,8 +48,8 @@ class TestDecoder(unittest.TestCase):
 class TestProtocol(unittest.TestCase):
     def test_connect(self):
         data = b"\x10\x18\x00\x04MQTT\x04\x02\x00<\x00\x0cmqttPUbRsGYH"
-        res, num_byte_consumed = deserialize_mqtt_message(data)
-        self.assertEqual(len(data), num_byte_consumed)
+        res, bytes_consumed = deserialize_mqtt_message(data)
+        self.assertEqual(len(data), len(bytes_consumed))
 
 
 if __name__ == "__main__":
