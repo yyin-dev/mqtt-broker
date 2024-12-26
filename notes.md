@@ -24,9 +24,9 @@ $ mqtt test -h localhost -p 1883 --mqttVersion=3
 $ mqtt test -h localhost -p 1883 --mqttVersion=3
 MQTT 3: OK
 	- Maximum topic length: 510 bytes
-	- QoS 0: Received 10/10 publishes in 4.52ms
-	- QoS 1: Received 10/10 publishes in 5.91ms
-	- QoS 2: Received 0/10 publishes in 10009.60ms
+	- QoS 0: Received 10/10 publishes in 3.78ms
+	- QoS 1: Received 10/10 publishes in 13.08ms
+	- QoS 2: Received 1/10 publishes in 6.76ms
 	- Retain: TIME_OUT
 	- Wildcard subscriptions: NO
 		> '+' Wildcard: TIME_OUT
@@ -74,7 +74,7 @@ Testing
 ```
 
 - [ ] Retained message
-- [ ] Message forwarding, at least once
+- [x] Message forwarding, at least once
 - [ ] Message forwarding, exactly once
 - [ ] Topic wildcards
 

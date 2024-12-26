@@ -1,5 +1,7 @@
-from typing import Dict, Set
 from socket import socket
+import threading
+import time
+from typing import Dict, Set, Tuple
 from protocol import (
     MqttConnack,
     MqttConnect,
@@ -26,8 +28,31 @@ class Server(socketserver.ThreadingTCPServer):
             self, server_address, RequestHandlerClass
         )
 
-        self.subscriptions: Dict[str, Set[bytes]] = {}  # maps topic name to client ids
-        self.clients: Dict[bytes, socket] = {}  # maps client id to socket
+        # maps topic name to client ids
+        self.subscriptions: Dict[str, Set[str]] = {}
+
+        # maps client id to socket
+        self.clients: Dict[str, socket] = {}
+
+        # maps packet-id to subscribers
+        self.at_least_once_messages: Dict[bytes, Tuple[MqttPublish, Set[str]]] = {}
+
+        threading.Thread(target=self.resend_at_least_once_messages).start()
+
+    def resend_at_least_once_messages(self):
+        while True:
+            if len(self.at_least_once_messages) > 0:
+                print("Retransmitting at-least-once messages!")
+
+                # Remove disconnected subscriber if any
+                for msg, subscribers in self.at_least_once_messages.values():
+                    subscribers = subscribers.intersection(self.clients.keys())
+                    print(f"Retransmitting {msg} to {subscribers}")
+                    for subscriber in subscribers:
+                        socket = self.clients[subscriber]
+                        socket.sendall(msg)
+
+            time.sleep(5)
 
     def server_activate(self):
         print("Server is being activated!")
@@ -94,7 +119,7 @@ class Handler(socketserver.StreamRequestHandler):
                         print(f"CONNACK sent")
                     case MqttPublish(
                         dup_flag, qos_level, retain, topic, packet_id, message
-                    ):
+                    ) as mqtt_publish:
                         if topic not in self.server.subscriptions:
                             self.server.subscriptions[topic] = set()
 
@@ -112,9 +137,13 @@ class Handler(socketserver.StreamRequestHandler):
                                     client_conn = self.server.clients[client_id]
                                     client_conn.sendall(bytes_consumed)
 
-                                # TODO: This is not strictly correct. 
-                                # Needs to retry sending until receiving PUBACK
-                                # from a subscriber.    
+                                # Mark message as to be delivered at least once
+                                self.server.at_least_once_messages[packet_id] = (
+                                    mqtt_publish,
+                                    self.server.subscriptions[
+                                        topic
+                                    ].copy(),  # copy() is important here! Python pass by object reference
+                                )
                             case QosLevel.EXACTLY_ONCE:
                                 print(f"Unsupported QoS level: {qos_level}!!!")
 
@@ -122,8 +151,26 @@ class Handler(socketserver.StreamRequestHandler):
                                 self.connection.sendall(puback.serialize())
                                 print(f"PUBACK sent")
 
+                                for client_id in self.server.subscriptions[topic]:
+                                    client_conn = self.server.clients[client_id]
+                                    client_conn.sendall(bytes_consumed)
+
                     case MqttPuback(packet_id):
-                        pass
+                        print(f"Received PUBACK for {packet_id} from {client_id}")
+
+                        if packet_id not in self.server.at_least_once_messages:
+                            # This is possible when we receive PUBACK for the
+                            # same packet_id from a client more than once.
+                            break
+
+                        _, subscribers = self.server.at_least_once_messages[packet_id]
+                        subscribers.discard(self.client_id)
+
+                        if len(subscribers) == 0:
+                            print(
+                                f"Recevied PUBACK from all subscribers of {packet_id}!"
+                            )
+                            del self.server.at_least_once_messages[packet_id]
                     case MqttSubscribe(packet_id, topics):
                         # Check unsupported qos-level
                         return_codes = []
