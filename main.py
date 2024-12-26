@@ -32,6 +32,18 @@ class Handler(socketserver.StreamRequestHandler):
         # https://stackoverflow.com/a/6875827/9057530
         print(f"Request #{self.server.request_count}")
 
+        while True:
+            # self.connection is a socket.socket
+            # https://docs.python.org/3/library/socket.html#socket-objects
+            # socket.recv() returns a bytes object
+            data = self.connection.recv(1024)
+
+            if len(data) == 0:
+                print("Client disconnected!")
+                break 
+
+            print(data)
+
 
 def main():
     socketserver.ThreadingTCPServer.allow_reuse_address = 1

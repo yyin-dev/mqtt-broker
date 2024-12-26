@@ -1,5 +1,5 @@
 Source: https://codepr.github.io/posts/sol-mqtt-broker/
 
 Mqtt client: https://github.com/hivemq/mqtt-cli
-
-
+- The client uses V5 by default. Provide "--mqttVersion 3" to use 3.1.1.
+- V5 introduces "problem infomation". Pass in "--no-reqProblemInfo" to skip requesting it from server.
