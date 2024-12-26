@@ -38,6 +38,7 @@ class TestDecoder(unittest.TestCase):
         self.assertEqual(Decoder(b"\x0a").varint(), 10)
         self.assertEqual(Decoder(b"\x7f").varint(), 127)
         self.assertEqual(Decoder(b"\x81\x01").varint(), 129)
+        self.assertEqual(Decoder(b"\x84\x08").varint(), 1028)
 
     def test_string(self):
         decoder = Decoder(b"\x00\x08ABCDEFGH")

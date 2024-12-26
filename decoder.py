@@ -26,7 +26,7 @@ class Decoder:
         while True:
             b = self.data[self.curr]
 
-            res = b | ((b & 0x7F) << shift)
+            res = res | ((b & 0x7F) << shift)
             self.curr += 1
 
             if b & 0x80 == 0:
