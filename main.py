@@ -4,6 +4,8 @@ from protocol import (
     MqttConnack,
     MqttConnect,
     MqttPublish,
+    MqttPuback,
+    MqttPubrec,
     MqttSubscribe,
     MqttSuback,
     MqttPingreq,
@@ -13,6 +15,7 @@ from protocol import (
     deserialize_mqtt_message,
 )
 import socketserver
+import uuid
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -51,6 +54,7 @@ class Handler(socketserver.StreamRequestHandler):
             # https://docs.python.org/3/library/socket.html#socket-objects
             # socket.recv() returns a bytes object
             data = self.connection.recv(1024)
+            # print(data)
 
             if len(data) == 0:
                 break
@@ -69,6 +73,19 @@ class Handler(socketserver.StreamRequestHandler):
                     ):
                         # Todo: validation
                         print(f"Client(id='{client_id}') connected")
+
+                        if client_id == "":
+                            # The doc says we have two choices:
+                            # 1. Reject and respond return_code = 0x02
+                            # 2. Assign a unique id to the client
+                            #
+                            # `mqtt test` passes in an empty client id and
+                            # gives up if rejected, so we do #2.
+                            client_id = str(uuid.uuid4())
+                            print(
+                                f"Received empty client id. Assign an unique id: {client_id}"
+                            )
+
                         self.client_id = client_id
                         self.server.clients[client_id] = self.connection
 
@@ -82,9 +99,17 @@ class Handler(socketserver.StreamRequestHandler):
                             case QosLevel.AT_MOST_ONCE:
                                 pass
                             case QosLevel.AT_LEAST_ONCE:
-                                raise NotImplementedError
+                                print(f"Unsupported QoS level: {qos_level}!!!")
+
+                                puback = MqttPuback(packet_id)
+                                self.connection.sendall(puback.serialize())
+                                print(f"PUBACK sent")
                             case QosLevel.EXACTLY_ONCE:
-                                raise NotImplementedError
+                                print(f"Unsupported QoS level: {qos_level}!!!")
+
+                                puback = MqttPubrec(packet_id)
+                                self.connection.sendall(puback.serialize())
+                                print(f"PUBACK sent")
 
                         if topic not in self.server.subscriptions:
                             self.server.subscriptions[topic] = set()

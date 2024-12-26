@@ -150,6 +150,48 @@ def deserialize_mqtt_publish(data):
 
 
 @dataclass
+class MqttPuback:
+    packet_id: bytes  # 2 byte
+
+    def serialize(self):
+        encoder = Encoder()
+
+        # fixed header
+        # byte1: 0x40
+        # byte2: remaining length 2
+        encoder.append_byte(0x40)
+        encoder.append_varint(2)
+
+        # variable header
+        encoder.append_bytes(self.packet_id)
+
+        # no payload
+
+        return encoder.bytes()
+
+
+@dataclass
+class MqttPubrec:
+    packet_id: bytes  # 2 byte
+
+    def serialize(self):
+        encoder = Encoder()
+
+        # fixed header
+        # byte1: 0x40
+        # byte2: remaining length 2
+        encoder.append_byte(0x50)
+        encoder.append_varint(2)
+
+        # variable header
+        encoder.append_bytes(self.packet_id)
+
+        # no payload
+
+        return encoder.bytes()
+
+
+@dataclass
 class MqttSubscribe:
     packet_id: bytes  # 2 bytes
     topics: List[Tuple[str, QosLevel]]
@@ -175,7 +217,14 @@ def deserialize_mqtt_subscribe(data):
         qos_level = QosLevel(decoder.byte())
         topics.append((topic, qos_level))
 
-    assert decoder.num_bytes_consumed() - num_bytes_in_fixed_header == remaining_len
+    if decoder.num_bytes_consumed() - num_bytes_in_fixed_header != remaining_len:
+        print(f"Consumed: {decoder.num_bytes_consumed()}")
+        print(f"Consumed after parsing fixed header: {num_bytes_in_fixed_header}")
+        print(
+            f"Consumed for variable header and payload: {decoder.num_bytes_consumed() - num_bytes_in_fixed_header}"
+        )
+        print(f"Expecrted: {remaining_len}")
+        raise Exception("Didn't fully consume message")
 
     return (MqttSubscribe(packet_id, topics), decoder.bytes_consumed())
 
