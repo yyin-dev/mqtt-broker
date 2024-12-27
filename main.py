@@ -1,7 +1,7 @@
 from socket import socket
 import threading
 import time
-from typing import Dict, Set, Tuple
+from typing import Dict, Set, Tuple, List
 from protocol import (
     MqttConnack,
     MqttConnect,
@@ -46,9 +46,9 @@ class Server(socketserver.ThreadingTCPServer):
             bytes, Tuple[MqttPublish, bytes]
         ] = {}
 
-        # maps packet-id to subscribers
+        # maps packet-id to a list of (mesage, bytes, subscribers)
         self.exactly_once_messages: Dict[
-            bytes, Tuple[Tuple[MqttPublish, bytes], Set[str]]
+            bytes, List[Tuple[Tuple[MqttPublish, bytes], Set[str]]]
         ] = {}
 
         threading.Thread(target=self.resend_messages).start()
@@ -72,12 +72,13 @@ class Server(socketserver.ThreadingTCPServer):
                 print("Retransmitting exactly-once messages!")
 
                 # Remove disconnected subscriber if any
-                for (msg, b), subscribers in self.exactly_once_messages.values():
-                    subscribers = subscribers.intersection(self.clients.keys())
-                    print(f"Retransmitting {msg} to {subscribers}")
-                    for subscriber in subscribers:
-                        socket = self.clients[subscriber]
-                        socket.sendall(b)
+                for msgs in self.exactly_once_messages.values():
+                    for (msg, b), subscribers in msgs:
+                        subscribers = subscribers.intersection(self.clients.keys())
+                        print(f"Retransmitting {msg} to {subscribers}")
+                        for subscriber in subscribers:
+                            socket = self.clients[subscriber]
+                            socket.sendall(b)
 
             time.sleep(2)
 
@@ -108,14 +109,15 @@ class Handler(socketserver.StreamRequestHandler):
             data = self.connection.recv(1024)
             # print(data)
 
-            if len(data) == 0:
+            if not data:
+                print(f"Client {self.client_id} disconnected!")
                 break
 
             while len(data) > 0:
                 print(data)
 
                 request, bytes_consumed = deserialize_mqtt_message(data)
-                print(f"Received: {request}")
+                print(f"Received: {request} from client: {self.client_id}")
 
                 match request:
                     case MqttConnect(
@@ -220,14 +222,29 @@ class Handler(socketserver.StreamRequestHandler):
                             mqtt_publish, mqtt_publish_bytes = (
                                 self.server.releasable_exactly_once_messages[packet_id]
                             )
-                            self.server.exactly_once_messages[packet_id] = (
-                                (mqtt_publish, mqtt_publish_bytes),
-                                self.server.subscriptions[mqtt_publish.topic].copy(),
+
+                            if packet_id not in self.server.exactly_once_messages:
+                                self.server.exactly_once_messages[packet_id] = []
+
+                            current_subscribers = self.server.subscriptions[
+                                mqtt_publish.topic
+                            ].copy()
+
+                            for subscriber in current_subscribers:
+                                self.server.clients[subscriber].sendall(
+                                    mqtt_publish_bytes
+                                )
+
+                            self.server.exactly_once_messages[packet_id].append(
+                                (
+                                    (mqtt_publish, mqtt_publish_bytes),
+                                    current_subscribers,
+                                )
                             )
                             del self.server.releasable_exactly_once_messages[packet_id]
 
                             print(
-                                f"Number of exactly once messages to be sent: {len(self.server.exactly_once_messages)}"
+                                f"Exactly once messages to be sent: {self.server.exactly_once_messages}"
                             )
 
                             # send PUBCOMP
@@ -236,7 +253,7 @@ class Handler(socketserver.StreamRequestHandler):
                             print("PUBCOMP sent")
                     case MqttPubcomp(packet_id):
                         print(
-                            f"Received PUBCOMP for {packet_id} from publisher {self.client_id}"
+                            f"Received PUBCOMP for {packet_id} from subscriber {self.client_id}"
                         )
 
                         if packet_id not in self.server.exactly_once_messages:
@@ -244,16 +261,18 @@ class Handler(socketserver.StreamRequestHandler):
                             # same packet_id from a client more than once.
                             pass
                         else:
-                            _, subscribers = self.server.exactly_once_messages[
-                                packet_id
-                            ]
+                            messages = self.server.exactly_once_messages[packet_id]
+                            _, subscribers = messages[0]
                             subscribers.discard(self.client_id)
 
                             if len(subscribers) == 0:
                                 print(
                                     f"Recevied PUBCOMP from all subscribers of {packet_id}!"
                                 )
-                                del self.server.exactly_once_messages[packet_id]
+                                del messages[0]
+
+                                if len(messages) == 0:
+                                    del self.server.exactly_once_messages[packet_id]
 
                     case MqttSubscribe(packet_id, topics):
                         # Check unsupported qos-level
@@ -293,9 +312,9 @@ class Handler(socketserver.StreamRequestHandler):
 
                 data = data[len(bytes_consumed) :]
 
-        print("Client disconnected!")
 
-        self.server.clients.pop(self.client_id)
+        if self.client_id in self.server.clients:
+            del self.server.clients[self.client_id]
 
         for topic, subscribers in self.server.subscriptions.items():
             subscribers.discard(self.client_id)
