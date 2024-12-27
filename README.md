@@ -1,6 +1,6 @@
-[TOC]
-
 A toy MQTT broker implementation supporting [version 3.1.1](https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/mqtt-v3.1.1.html). 
+
+[TOC]
 
 ### MQTT client
 
