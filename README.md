@@ -74,8 +74,34 @@ Testing
 ```
 
 - [ ] Retained message
+
 - [x] Message forwarding, at least once
-- [ ] Message forwarding, exactly once
+```
+$ mqttx sub -t my_topic --mqtt-version 3.1.1 -h 127.0.0.1 -p 1883  --qos 1
+✔ Connected
+✔ Subscribed to my_topic
+topic: my_topic, qos: 1
+hi
+
+$ mqttx pub -t my_topic --mqtt-version 3.1.1 -h 127.0.0.1 -p 1883 --qos 1 -m hi
+✔ Connected
+✔ Message published
+```
+
+- [x] Message forwarding, exactly once
+```
+$ mqttx sub -t my_topic --mqtt-version 3.1.1 -h 127.0.0.1 -p 1883  --qos 2
+✔ Connected
+✔ Subscribed to my_topic
+
+topic: my_topic, qos: 2
+hi
+
+$ mqttx pub -t my_topic --mqtt-version 3.1.1 -h 127.0.0
+.1 -p 1883 --qos 2 -m hi
+✔ Connected
+✔ Message published
+```
 - [ ] Topic wildcards
 
 
