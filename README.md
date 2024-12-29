@@ -10,13 +10,14 @@ MqttX client: https://mqttx.app/docs/cli/get-started
 $ mqttx conn --mqtt-version 3.1.1 -h localhost -p 1883
 ```
 
-Mqtt client: https://github.com/hivemq/mqtt-cli
-- The client uses V5 by default. Provide `--mqttVersion 3` to use 3.1.1.
-- V5 introduces "problem infomation". Pass in `--no-reqProblemInfo` to skip requesting it from server.
-
+Note: I believe [HiveMQ's client](https://github.com/hivemq/mqtt-cli) is flawed for 3.1.1. In QoS 2, when the broker relays a message to the subscriber, the message exchange should look like
 ```
-$ mqtt test -h localhost -p 1883 --mqttVersion=3
+Broker -> Subscriber: PUBLISH
+Subscriber -> Broker: PUBREC
+Broker -> Subscriber: PUBREL
+Subscriber -> Broker: PUBCOMP
 ```
+However, after receiving PUBREL, the client disconnected immedaitely without sending a PUBCOMP.
 
 ### Progress
 
@@ -116,3 +117,75 @@ s = b"\x41\x42"
 ```
 num = 0x41 
 ```
+
+
+
+### Digging into the test of HiveMQ's client
+
+> Note: this section is no longer useful. Because I believe the client's test is flawed for 3.1.1.
+
+Build https://hivemq.github.io/mqtt-cli/ from source locally.
+
+Update build.gradle.tks (there's another one in `./mqtt-cli-plugins`) to use the jdk you have. The following diff is for JDK23.
+
+```
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 118e0aa8..8a572770 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -50,13 +50,13 @@ application {
+
+ java {
+     toolchain {
+-        languageVersion = JavaLanguageVersion.of(21)
++        languageVersion = JavaLanguageVersion.of(23)
+     }
+ }
+
+ tasks.compileJava {
+     javaCompiler = javaToolchains.compilerFor {
+-        languageVersion = JavaLanguageVersion.of(11)
++        languageVersion = JavaLanguageVersion.of(23)
+     }
+ }
+
+@@ -546,7 +546,7 @@ tasks.buildDeb {
+
+ tasks.buildRpm {
+     release = "1"
+-    requires("jre", "1.8.0", Flags.GREATER or Flags.EQUAL)
++    requires("jre", "1.23.0", Flags.GREATER or Flags.EQUAL)
+ }
+
+ val buildDebianPackage by tasks.registering {
+diff --git a/mqtt-cli-plugins/build.gradle.kts b/mqtt-cli-plugins/build.gradle.kts
+index 94e92779..7a248dee 100644
+--- a/mqtt-cli-plugins/build.gradle.kts
++++ b/mqtt-cli-plugins/build.gradle.kts
+@@ -6,7 +6,7 @@ group = "com.hivemq"
+
+ java {
+     toolchain {
+-        languageVersion = JavaLanguageVersion.of(8)
++        languageVersion = JavaLanguageVersion.of(23)
+     }
+ }
+```
+
+Find out java home
+```
+$ brew install openjdk
+$ java --version
+$ /usr/libexec/java_home
+/opt/homebrew/Cellar/openjdk/23.0.1/libexec/openjdk.jdk/Contents/Home
+```
+
+In vscode settings, add the line blow s.t. the extention knows about this jre.
+
+```
+    "java.import.gradle.java.home": "/opt/homebrew/Cellar/openjdk/23.0.1/libexec/openjdk.jdk/Contents/Home",
+```
+
+Build with gradlew: `./gradlew build -x check`. Use `-x check` to skip the task named "check" in build.gradle.tks.
+
+Run `java -jar build/libs/mqtt-cli-4.35.0.jar`.
